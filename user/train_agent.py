@@ -171,10 +171,28 @@ class BasedAgent(Agent):
         return action
 
 
+class X_SECTION(Enum):
+    LEFT_EDGE = "left_edge"
+    LEFT_PLATFORM = "left_platform"
+    RIGHT_EDGE = "right_edge"
+    RIGHT_PLATFORM = "right_platform"
+    MIDDLE = "middle"
+
+
+class Y_SECTION(Enum):
+    BOTTOM = "bottom" # (> 0.85)
+    MIDDLE = "middle"
+    TOP = "top" # (<= 2.85)
+
 class BasedAgent2(Agent):
     '''
     Better BasedAgent
     '''
+    HORIZONTAL_THRESHOLD = 0.4
+    VERTICAL_THRESHOLD = 2.0
+    CHARACTER_HEIGHT = 0.4
+    CHARACTER_WIDTH = 0.4
+
     def __init__(
             self,
             *args,
@@ -182,6 +200,30 @@ class BasedAgent2(Agent):
     ):
         super().__init__(*args, **kwargs)
         self.time = 0
+        self.x_section: X_SECTION = X_SECTION.LEFT_PLATFORM
+        self.y_section: Y_SECTION = Y_SECTION.MIDDLE
+
+    def get_section(self, pos: tuple[float, float]):
+        if pos[0] < -7.0 - self.CHARACTER_WIDTH + self.HORIZONTAL_THRESHOLD:
+            x_section = X_SECTION.LEFT_EDGE
+        elif pos[0] < -2.0 + self.CHARACTER_WIDTH - self.HORIZONTAL_THRESHOLD:
+            x_section = X_SECTION.LEFT_PLATFORM
+        elif pos[0] < 2.0 - self.CHARACTER_WIDTH + self.HORIZONTAL_THRESHOLD:
+            x_section = X_SECTION.MIDDLE
+        elif pos[0] < 7.0 + self.CHARACTER_WIDTH - self.HORIZONTAL_THRESHOLD:
+            x_section = X_SECTION.RIGHT_PLATFORM
+        else:
+            x_section = X_SECTION.RIGHT_EDGE
+
+        if pos[1] < 0.85 - self.CHARACTER_HEIGHT + self.VERTICAL_THRESHOLD:
+            y_section = Y_SECTION.TOP
+        elif pos[1] < 2.85 - self.CHARACTER_HEIGHT + self.VERTICAL_THRESHOLD:
+            y_section = Y_SECTION.MIDDLE
+        else:
+            y_section = Y_SECTION.BOTTOM
+
+        return x_section, y_section
+
 
     def predict(self, obs):
         self.time += 1
@@ -193,19 +235,17 @@ class BasedAgent2(Agent):
         prev_vel_y = 0
         self_jumps_left = self.obs_helper.get_section(obs, 'player_jumps_left')
 
+        self.x_section, self.y_section = self.get_section(pos)
+
         # Horizontal Recovery
-        HORIZONTAL_THRESHOLD = 1.0
-        VERTICAL_THRESHOLD = 2.0
-        CHARACTER_HEIGHT = 0.4
-        CHARACTER_WIDTH = 0.4
-        if pos[0] > 7.0 + CHARACTER_WIDTH - HORIZONTAL_THRESHOLD:
+        if pos[0] > 7.0 + self.CHARACTER_WIDTH - self.HORIZONTAL_THRESHOLD:
             action = self.act_helper.press_keys(['a'])
-        elif pos[0] < -7.0 - CHARACTER_WIDTH + HORIZONTAL_THRESHOLD:
+        elif pos[0] < -7.0 - self.CHARACTER_WIDTH + self.HORIZONTAL_THRESHOLD:
             action = self.act_helper.press_keys(['d'])
         elif (
-            pos[0] >= -2.0 + CHARACTER_WIDTH - 1.5 * HORIZONTAL_THRESHOLD and
-            pos[0] <= 2.0 - CHARACTER_WIDTH + HORIZONTAL_THRESHOLD and
-            pos[1] > ((max(pos[0], -2.0) + 2.0) / 4.0 * -2.0 + 2.85) - CHARACTER_HEIGHT - 0.4
+            pos[0] >= -2.0 + self.CHARACTER_WIDTH - 1.5 * self.HORIZONTAL_THRESHOLD and
+            pos[0] <= 2.0 - self.CHARACTER_WIDTH + self.HORIZONTAL_THRESHOLD and
+            pos[1] > ((max(pos[0], -2.0) + 2.0) / 4.0 * -2.0 + 2.85) - self.CHARACTER_HEIGHT - 0.4
         ): 
                 action = self.act_helper.press_keys(['a'])
         elif not opp_KO:
@@ -217,24 +257,24 @@ class BasedAgent2(Agent):
 
         # Vertical Recovery
         if (
-            (pos[0] <= 2.0 and pos[1] > 2.85 - CHARACTER_HEIGHT + VERTICAL_THRESHOLD) or
-            (pos[0] > 2.0 and pos[1] > 0.85 - CHARACTER_HEIGHT + VERTICAL_THRESHOLD)
+            (pos[0] <= 2.0 and pos[1] > 2.85 - self.CHARACTER_HEIGHT + self.VERTICAL_THRESHOLD) or
+            (pos[0] > 2.0 and pos[1] > 0.85 - self.CHARACTER_HEIGHT + self.VERTICAL_THRESHOLD)
         ):
             if self.time % 2 == 0:
                 action = self.act_helper.press_keys(['space'], action)
             if vel[1] > prev_vel_y and self.time % 2 == 1:
                 action = self.act_helper.press_keys(['k'], action)
         # Jump towards opponent
-        elif pos[1] > opp_pos[1] and self_jumps_left == 0 and self.time % 2 == 0:
+        elif pos[1] > opp_pos[1] + 0.1 and self_jumps_left == 0 and self.time % 2 == 0:
             action = self.act_helper.press_keys(['space'], action)
 
         # Attack if near
         if not (
-            (pos[0] <= 2.0 and pos[1] > 2.85 - CHARACTER_HEIGHT) or
-            (pos[0] > 2.0 and pos[1] > 0.85 - CHARACTER_HEIGHT)
+            (pos[0] <= 2.0 and pos[1] > 2.85 - self.CHARACTER_HEIGHT) or
+            (pos[0] > 2.0 and pos[1] > 0.85 - self.CHARACTER_HEIGHT)
         ) and not (
-            pos[0] > 7.0 + CHARACTER_WIDTH - HORIZONTAL_THRESHOLD or
-            pos[0] < -7.0 - CHARACTER_WIDTH + HORIZONTAL_THRESHOLD
+            pos[0] > 7.0 + self.CHARACTER_WIDTH - self.HORIZONTAL_THRESHOLD or
+            pos[0] < -7.0 - self.CHARACTER_WIDTH + self.HORIZONTAL_THRESHOLD
         ):
             if (pos[0] - opp_pos[0])**2 + (pos[1] - opp_pos[1])**2 < 3.5:
                 action = self.act_helper.press_keys(['j'], action)
