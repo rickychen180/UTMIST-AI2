@@ -188,7 +188,7 @@ class BasedAgent2(Agent):
     '''
     Better BasedAgent
     '''
-    HORIZONTAL_THRESHOLD = 0.4
+    HORIZONTAL_THRESHOLD = 1.0
     VERTICAL_THRESHOLD = 2.0
     CHARACTER_HEIGHT = 0.4
     CHARACTER_WIDTH = 0.4
@@ -215,7 +215,7 @@ class BasedAgent2(Agent):
         else:
             x_section = X_SECTION.RIGHT_EDGE
 
-        if pos[1] < 0.85 - self.CHARACTER_HEIGHT + self.VERTICAL_THRESHOLD:
+        if pos[1] < 0.85 - self.CHARACTER_HEIGHT:
             y_section = Y_SECTION.TOP
         elif pos[1] < 2.85 - self.CHARACTER_HEIGHT + self.VERTICAL_THRESHOLD:
             y_section = Y_SECTION.MIDDLE
@@ -234,20 +234,20 @@ class BasedAgent2(Agent):
         action = self.act_helper.zeros()
         prev_vel_y = 0
         self_jumps_left = self.obs_helper.get_section(obs, 'player_jumps_left')
+        platform_pos = self.obs_helper.get_section(obs, 'player_moving_platform_pos')
 
         self.x_section, self.y_section = self.get_section(pos)
 
-        # Horizontal Recovery
-        if pos[0] > 7.0 + self.CHARACTER_WIDTH - self.HORIZONTAL_THRESHOLD:
-            action = self.act_helper.press_keys(['a'])
-        elif pos[0] < -7.0 - self.CHARACTER_WIDTH + self.HORIZONTAL_THRESHOLD:
+        # Horizontal Movement
+        if self.x_section == X_SECTION.LEFT_EDGE:
             action = self.act_helper.press_keys(['d'])
+        elif self.x_section == X_SECTION.RIGHT_EDGE:
+            action = self.act_helper.press_keys(['a'])
         elif (
-            pos[0] >= -2.0 + self.CHARACTER_WIDTH - 1.5 * self.HORIZONTAL_THRESHOLD and
-            pos[0] <= 2.0 - self.CHARACTER_WIDTH + self.HORIZONTAL_THRESHOLD and
-            pos[1] > ((max(pos[0], -2.0) + 2.0) / 4.0 * -2.0 + 2.85) - self.CHARACTER_HEIGHT - 0.4
-        ): 
-                action = self.act_helper.press_keys(['a'])
+            self.x_section == X_SECTION.MIDDLE and 
+            pos[1] > platform_pos[1] + self.CHARACTER_HEIGHT
+        ):
+            action = self.act_helper.press_keys(['a'])
         elif not opp_KO:
             # Head towards opponent
             if (opp_pos[0] > pos[0]):
@@ -255,26 +255,26 @@ class BasedAgent2(Agent):
             else:
                 action = self.act_helper.press_keys(['a'])
 
-        # Vertical Recovery
+        # Vertical Movement
         if (
-            (pos[0] <= 2.0 and pos[1] > 2.85 - self.CHARACTER_HEIGHT + self.VERTICAL_THRESHOLD) or
-            (pos[0] > 2.0 and pos[1] > 0.85 - self.CHARACTER_HEIGHT + self.VERTICAL_THRESHOLD)
+            self.y_section == Y_SECTION.BOTTOM or
+            (self.x_section == X_SECTION.RIGHT_EDGE and self.y_section == Y_SECTION.MIDDLE)
         ):
             if self.time % 2 == 0:
                 action = self.act_helper.press_keys(['space'], action)
             if vel[1] > prev_vel_y and self.time % 2 == 1:
                 action = self.act_helper.press_keys(['k'], action)
-        # Jump towards opponent
         elif pos[1] > opp_pos[1] + 0.1 and self_jumps_left == 0 and self.time % 2 == 0:
             action = self.act_helper.press_keys(['space'], action)
 
         # Attack if near
-        if not (
-            (pos[0] <= 2.0 and pos[1] > 2.85 - self.CHARACTER_HEIGHT) or
-            (pos[0] > 2.0 and pos[1] > 0.85 - self.CHARACTER_HEIGHT)
-        ) and not (
-            pos[0] > 7.0 + self.CHARACTER_WIDTH - self.HORIZONTAL_THRESHOLD or
-            pos[0] < -7.0 - self.CHARACTER_WIDTH + self.HORIZONTAL_THRESHOLD
+        if (
+            self.x_section == X_SECTION.LEFT_PLATFORM or
+            self.x_section == X_SECTION.RIGHT_PLATFORM or
+            (
+                self.x_section == X_SECTION.MIDDLE and 
+                pos[1] < platform_pos[1] - self.CHARACTER_HEIGHT
+            )
         ):
             if (pos[0] - opp_pos[0])**2 + (pos[1] - opp_pos[1])**2 < 3.5:
                 action = self.act_helper.press_keys(['j'], action)
