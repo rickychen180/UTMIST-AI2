@@ -188,7 +188,7 @@ class BasedAgent2(Agent):
     '''
     Better BasedAgent
     '''
-    HORIZONTAL_THRESHOLD = 1.0
+    HORIZONTAL_THRESHOLD = 1.2
     VERTICAL_THRESHOLD = 2.0
     CHARACTER_HEIGHT = 0.4
     CHARACTER_WIDTH = 0.4
@@ -236,6 +236,7 @@ class BasedAgent2(Agent):
         action = self.act_helper.zeros()
         prev_vel_y = 0
         self_jumps_left = self.obs_helper.get_section(obs, 'player_jumps_left')
+        self_recoveries_left = self.obs_helper.get_section(obs, 'player_recoveries_left')
         platform_pos = self.obs_helper.get_section(obs, 'player_moving_platform_pos')
 
         self.x_section, self.y_section = self.get_section(pos)
@@ -264,7 +265,7 @@ class BasedAgent2(Agent):
         ):
             if self.time % 2 == 0:
                 action = self.act_helper.press_keys(['space'], action)
-            if vel[1] > prev_vel_y and self.time % 2 == 1:
+            if vel[1] > prev_vel_y and self_recoveries_left == 1 and self.time % 2 == 1:
                 action = self.act_helper.press_keys(['k'], action)
         # Jump towards opponent
         elif pos[1] > opp_pos[1] + 0.1 and self_jumps_left == 0 and not opp_KO and self.time % 2 == 0:
@@ -285,7 +286,10 @@ class BasedAgent2(Agent):
                     action = self.act_helper.press_keys(['s'], action)
                 elif pos[1] > opp_pos[1] + 1.0 and np.random.random() < 0.75:
                     action = self.act_helper.press_keys(['w'], action)
-                attack_option = np.random.choice(['j', 'k', 'l'], p=[0.5, 0.25, 0.25])
+                if self_jumps_left == 0:
+                    attack_option = np.random.choice(['j', 'k', 'l', 'space'], p=[0.4, 0.2, 0.2, 0.2])
+                else:
+                    attack_option = np.random.choice(['j', 'k', 'l'], p=[0.5, 0.25, 0.25])
                 action = self.act_helper.press_keys([attack_option], action)
 
         # Taunting
