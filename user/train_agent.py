@@ -170,6 +170,176 @@ class BasedAgent(Agent):
             action = self.act_helper.press_keys(['j'], action)
         return action
 
+
+class BasedAgent2(Agent):
+    '''
+    Better BasedAgent
+    '''
+    def __init__(
+            self,
+            *args,
+            **kwargs
+    ):
+        super().__init__(*args, **kwargs)
+        self.time = 0
+
+    def predict(self, obs):
+        self.time += 1
+        pos = self.obs_helper.get_section(obs, 'player_pos')
+        vel = self.obs_helper.get_section(obs, 'player_vel')
+        opp_pos = self.obs_helper.get_section(obs, 'opponent_pos')
+        opp_KO = self.obs_helper.get_section(obs, 'opponent_state') in [5, 11]
+        action = self.act_helper.zeros()
+        prev_vel_y = 0
+        self_jumps_left = self.obs_helper.get_section(obs, 'player_jumps_left')
+
+        # Horizontal Recovery
+        HORIZONTAL_THRESHOLD = 1.0
+        VERTICAL_THRESHOLD = 2.0
+        CHARACTER_HEIGHT = 0.4
+        CHARACTER_WIDTH = 0.4
+        if pos[0] > 7.0 + CHARACTER_WIDTH - HORIZONTAL_THRESHOLD:
+            action = self.act_helper.press_keys(['a'])
+        elif pos[0] < -7.0 - CHARACTER_WIDTH + HORIZONTAL_THRESHOLD:
+            action = self.act_helper.press_keys(['d'])
+        elif (
+            pos[0] >= -2.0 + CHARACTER_WIDTH - 1.5 * HORIZONTAL_THRESHOLD and
+            pos[0] <= 2.0 - CHARACTER_WIDTH + HORIZONTAL_THRESHOLD and
+            pos[1] > ((max(pos[0], -2.0) + 2.0) / 4.0 * -2.0 + 2.85) - CHARACTER_HEIGHT - 0.4
+        ): 
+                action = self.act_helper.press_keys(['a'])
+        elif not opp_KO:
+            # Head towards opponent
+            if (opp_pos[0] > pos[0]):
+                action = self.act_helper.press_keys(['d'])
+            else:
+                action = self.act_helper.press_keys(['a'])
+
+        # Vertical Recovery
+        if (
+            (pos[0] <= 2.0 and pos[1] > 2.85 - CHARACTER_HEIGHT + VERTICAL_THRESHOLD) or
+            (pos[0] > 2.0 and pos[1] > 0.85 - CHARACTER_HEIGHT + VERTICAL_THRESHOLD)
+        ):
+            if self.time % 2 == 0:
+                action = self.act_helper.press_keys(['space'], action)
+            if vel[1] > prev_vel_y and self.time % 2 == 1:
+                action = self.act_helper.press_keys(['k'], action)
+        # Jump towards opponent
+        elif pos[1] > opp_pos[1] and self_jumps_left == 0 and self.time % 2 == 0:
+            action = self.act_helper.press_keys(['space'], action)
+
+        # Attack if near
+        if not (
+            (pos[0] <= 2.0 and pos[1] > 2.85 - CHARACTER_HEIGHT) or
+            (pos[0] > 2.0 and pos[1] > 0.85 - CHARACTER_HEIGHT)
+        ) and not (
+            pos[0] > 7.0 + CHARACTER_WIDTH - HORIZONTAL_THRESHOLD or
+            pos[0] < -7.0 - CHARACTER_WIDTH + HORIZONTAL_THRESHOLD
+        ):
+            if (pos[0] - opp_pos[0])**2 + (pos[1] - opp_pos[1])**2 < 3.5:
+                action = self.act_helper.press_keys(['j'], action)
+
+        prev_vel_y = vel[1]
+        return action
+
+
+class MixedAgent(Agent):
+    '''
+    '''
+    def __init__(
+            self,
+            *args,
+            **kwargs
+    ):
+        super().__init__(*args, **kwargs)
+        self.time = 0
+
+    def predict(self, obs):
+        ### Manual
+        action = self.act_helper.zeros()
+
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_w]:
+            action = self.act_helper.press_keys(['w'], action)
+        if keys[pygame.K_a]:
+            action = self.act_helper.press_keys(['a'], action)
+        if keys[pygame.K_s]:
+            action = self.act_helper.press_keys(['s'], action)
+        if keys[pygame.K_d]:
+            action = self.act_helper.press_keys(['d'], action)
+        if keys[pygame.K_SPACE]:
+            action = self.act_helper.press_keys(['space'], action)
+        # h j k l
+        if keys[pygame.K_h]:
+            action = self.act_helper.press_keys(['h'], action)
+        if keys[pygame.K_j]:
+            action = self.act_helper.press_keys(['j'], action)
+        if keys[pygame.K_k]:
+            action = self.act_helper.press_keys(['k'], action)
+        if keys[pygame.K_l]:
+            action = self.act_helper.press_keys(['l'], action)
+        if keys[pygame.K_g]:
+            action = self.act_helper.press_keys(['g'], action)
+
+        ### Auto
+        self.time += 1
+        pos = self.obs_helper.get_section(obs, 'player_pos')
+        vel = self.obs_helper.get_section(obs, 'player_vel')
+        opp_pos = self.obs_helper.get_section(obs, 'opponent_pos')
+        opp_KO = self.obs_helper.get_section(obs, 'opponent_state') in [5, 11]
+        prev_vel_y = 0
+        self_jumps_left = self.obs_helper.get_section(obs, 'player_jumps_left')
+
+        # Horizontal Recovery
+        HORIZONTAL_THRESHOLD = 1.0
+        VERTICAL_THRESHOLD = 1.0
+        CHARACTER_HEIGHT = 0.4
+        CHARACTER_WIDTH = 0.4
+        if pos[0] > 7.0 + CHARACTER_WIDTH - HORIZONTAL_THRESHOLD:
+            action = self.act_helper.press_keys(['a'])
+        elif pos[0] < -7.0 - CHARACTER_WIDTH + HORIZONTAL_THRESHOLD:
+            action = self.act_helper.press_keys(['d'])
+        elif (
+            pos[0] >= -2.0 + CHARACTER_WIDTH - HORIZONTAL_THRESHOLD and
+            pos[0] <= 2.0 - CHARACTER_WIDTH + HORIZONTAL_THRESHOLD and
+            pos[1] > ((max(pos[0], -2.0) + 2.0) / 4.0 * -2.0 + 2.85) - CHARACTER_HEIGHT - 0.4
+        ): 
+                action = self.act_helper.press_keys(['a'])
+        # elif not opp_KO:
+        #     # Head towards opponent
+        #     if (opp_pos[0] > pos[0]):
+        #         action = self.act_helper.press_keys(['d'])
+        #     else:
+        #         action = self.act_helper.press_keys(['a'])
+
+        # Vertical Recovery
+        if (
+            (pos[0] <= 2.0 and pos[1] > 2.85 - CHARACTER_HEIGHT + VERTICAL_THRESHOLD) or
+            (pos[0] > 2.0 and pos[1] > 0.85 - CHARACTER_HEIGHT + VERTICAL_THRESHOLD)
+        ):
+            if self.time % 4 == 0:
+                action = self.act_helper.press_keys(['space'], action)
+            if vel[1] > prev_vel_y:
+                action = self.act_helper.press_keys(['k'], action)
+        # Jump towards opponent
+        # elif pos[1] > opp_pos[1]:
+        #     action = self.act_helper.press_keys(['space'], action)
+
+        # Attack if near
+        if not (
+            (pos[0] <= 2.0 and pos[1] > 2.85 - CHARACTER_HEIGHT) or
+            (pos[0] > 2.0 and pos[1] > 0.85 - CHARACTER_HEIGHT)
+        ) and not (
+            pos[0] > 7.0 + CHARACTER_WIDTH - HORIZONTAL_THRESHOLD or
+            pos[0] < -7.0 - CHARACTER_WIDTH + HORIZONTAL_THRESHOLD
+        ):
+            if (pos[0] - opp_pos[0])**2 + (pos[1] - opp_pos[1])**2 < 3.5:
+                action = self.act_helper.press_keys(['j'], action)
+
+        prev_vel_y = vel[1]
+        return action
+
+
 class UserInputAgent(Agent):
     '''
     UserInputAgent:
@@ -309,7 +479,7 @@ class CustomAgent(Agent):
     
     def _initialize(self) -> None:
         if self.file_path is None:
-            self.model = self.sb3_class("MlpPolicy", self.env, policy_kwargs=self.extractor.get_policy_kwargs(), verbose=0, n_steps=30*90*3, batch_size=128, ent_coef=0.01)
+            self.model = self.sb3_class("CnnPolicy", self.env, policy_kwargs=self.extractor.get_policy_kwargs(), verbose=0, n_steps=30*90*3, batch_size=256, ent_coef=0.01, learning_rate=1e-3, device="cuda")
             del self.env
         else:
             self.model = self.sb3_class.load(self.file_path)
@@ -544,13 +714,13 @@ Add your dictionary of RewardFunctions here using RewTerms
 def gen_reward_manager():
     reward_functions = {
         #'target_height_reward': RewTerm(func=base_height_l2, weight=0.0, params={'target_height': -4, 'obj_name': 'player'}),
-        'danger_zone_reward': RewTerm(func=danger_zone_reward, weight=0.5),
-        'damage_interaction_reward': RewTerm(func=damage_interaction_reward, weight=1.0),
+        #'danger_zone_reward': RewTerm(func=danger_zone_reward, weight=0.5),
+        #'damage_interaction_reward': RewTerm(func=damage_interaction_reward, weight=1.0),
         #'head_to_middle_reward': RewTerm(func=head_to_middle_reward, weight=0.01),
         #'head_to_opponent': RewTerm(func=head_to_opponent, weight=0.05),
-        'penalize_attack_reward': RewTerm(func=in_state_reward, weight=-0.04, params={'desired_state': AttackState}),
-        'holding_more_than_3_keys': RewTerm(func=holding_more_than_3_keys, weight=-0.01),
-        #'taunt_reward': RewTerm(func=in_state_reward, weight=0.2, params={'desired_state': TauntState}),
+        #'penalize_attack_reward': RewTerm(func=in_state_reward, weight=-0.04, params={'desired_state': AttackState}),
+        #'holding_more_than_3_keys': RewTerm(func=holding_more_than_3_keys, weight=-0.01),
+        'taunt_reward': RewTerm(func=in_state_reward, weight=1.0, params={'desired_state': TauntState}),
     }
     signal_subscriptions = {
         'on_win_reward': ('win_signal', RewTerm(func=on_win_reward, weight=50)),
@@ -597,9 +767,9 @@ if __name__ == '__main__':
 
     # Set opponent settings here:
     opponent_specification = {
-                    'self_play': (8, selfplay_handler),
+                    'self_play': (1.5, selfplay_handler),
                     'constant_agent': (0.5, partial(ConstantAgent)),
-                    'based_agent': (1.5, partial(BasedAgent)),
+                    'based_agent': (8, partial(BasedAgent)),
                 }
     opponent_cfg = OpponentsCfg(opponents=opponent_specification)
 
@@ -608,6 +778,6 @@ if __name__ == '__main__':
         save_handler,
         opponent_cfg,
         CameraResolution.LOW,
-        train_timesteps=1_000_000_000,
+        train_timesteps=2_000_000,
         train_logging=TrainLogging.PLOT
     )
