@@ -202,6 +202,7 @@ class BasedAgent2(Agent):
         self.time = 0
         self.x_section: X_SECTION = X_SECTION.LEFT_PLATFORM
         self.y_section: Y_SECTION = Y_SECTION.MIDDLE
+        self.taunted_once: bool = False
 
     def get_section(self, pos: tuple[float, float]):
         if pos[0] < -7.0 - self.CHARACTER_WIDTH + self.HORIZONTAL_THRESHOLD:
@@ -229,8 +230,9 @@ class BasedAgent2(Agent):
         self.time += 1
         pos = self.obs_helper.get_section(obs, 'player_pos')
         vel = self.obs_helper.get_section(obs, 'player_vel')
+        self_state = self.obs_helper.get_section(obs, 'player_state')
         opp_pos = self.obs_helper.get_section(obs, 'opponent_pos')
-        opp_KO = self.obs_helper.get_section(obs, 'opponent_state') in [5, 11]
+        opp_KO = self.obs_helper.get_section(obs, 'opponent_state') in [11]
         action = self.act_helper.zeros()
         prev_vel_y = 0
         self_jumps_left = self.obs_helper.get_section(obs, 'player_jumps_left')
@@ -264,7 +266,8 @@ class BasedAgent2(Agent):
                 action = self.act_helper.press_keys(['space'], action)
             if vel[1] > prev_vel_y and self.time % 2 == 1:
                 action = self.act_helper.press_keys(['k'], action)
-        elif pos[1] > opp_pos[1] + 0.1 and self_jumps_left == 0 and self.time % 2 == 0:
+        # Jump towards opponent
+        elif pos[1] > opp_pos[1] + 0.1 and self_jumps_left == 0 and not opp_KO and self.time % 2 == 0:
             action = self.act_helper.press_keys(['space'], action)
 
         # Attack if near
@@ -276,8 +279,28 @@ class BasedAgent2(Agent):
                 pos[1] < platform_pos[1] - self.CHARACTER_HEIGHT
             )
         ):
-            if (pos[0] - opp_pos[0])**2 + (pos[1] - opp_pos[1])**2 < 3.5:
-                action = self.act_helper.press_keys(['j'], action)
+            squared_engagement_range = np.random.random() * 2.5 + 5
+            if (pos[0] - opp_pos[0])**2 + (pos[1] - opp_pos[1])**2 < squared_engagement_range:
+                if pos[1] < opp_pos[1] - 1.0 and np.random.random() < 0.5:
+                    action = self.act_helper.press_keys(['s'], action)
+                elif pos[1] > opp_pos[1] + 1.0 and np.random.random() < 0.75:
+                    action = self.act_helper.press_keys(['w'], action)
+                attack_option = np.random.choice(['j', 'k', 'l'], p=[0.5, 0.25, 0.25])
+                action = self.act_helper.press_keys([attack_option], action)
+
+        # Taunting
+        if (
+            opp_KO and
+            not self.taunted_once and 
+            self.time % 2 == 0 and
+            self_state in [0, 1, 2] and
+            self.x_section in [X_SECTION.LEFT_PLATFORM, X_SECTION.RIGHT_PLATFORM]
+        ):
+            action = self.act_helper.press_keys(['g'], action)
+        elif (self_state == 12):
+            self.taunted_once = True
+        if (not opp_KO):
+            self.taunted_once = False
 
         prev_vel_y = vel[1]
         return action
