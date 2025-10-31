@@ -1199,13 +1199,13 @@ class WarehouseBrawl(MalachiteEnv[np.ndarray, np.ndarray, int]):
         canvas.blit(text_surface, text_rect)
 
         # Smaller text
-        text_surface = small_font.render(f"P1 Total Reward: {self.logger[0].get('total_reward', '')}, Reward {self.logger[0].get('reward', '')}", True, (255, 255, 255))  # White text
+        text_surface = small_font.render(f"P1 Position: ({self.players[0].body.position.x:.2f}, {self.players[0].body.position.y:.2f}); Velocity: ({self.players[0].body.velocity.x:.2f}, {self.players[0].body.velocity.y:.2f})", True, (255, 255, 255))  # White text
         text_rect = text_surface.get_rect(center=(0, self.camera.window_height - 40))  # Center the text
         # make it left
         text_rect.left = 0
         canvas.blit(text_surface, text_rect)
 
-        text_surface = small_font.render(f"P2 Total Reward: {self.logger[1].get('total_reward', '')}, Reward {self.logger[1].get('reward', '')}", True, (255, 255, 255))  # White text
+        text_surface = small_font.render(f"P1 Position: ({self.players[1].body.position.x:.2f}, {self.players[1].body.position.y:.2f}); Velocity: ({self.players[1].body.velocity.x:.2f}, {self.players[1].body.velocity.y:.2f})", True, (255, 255, 255))  # White text
         text_rect = text_surface.get_rect(center=(0, self.camera.window_height - 20))  # Center the text
         text_rect.left = 0
         canvas.blit(text_surface, text_rect)
