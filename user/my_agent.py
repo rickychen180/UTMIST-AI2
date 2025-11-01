@@ -144,50 +144,55 @@ class SubmittedAgent(Agent):
         ):
             # Engagement range
             if self_weapon_type == 0:
-                squared_engagement_range = np.random.random() * 2.5 + 5
+                squared_engagement_range = 6.25
             else:
-                squared_engagement_range = np.random.random() * 4 + 9
+                squared_engagement_range = 9
 
             if (pos[0] - opp_pos[0])**2 + (pos[1] - opp_pos[1])**2 < squared_engagement_range:
                 # Weights for holding s or w
-                if pos[1] < opp_pos[1] - 0.5:
-                    s_w_weights = np.array([0.75, 0, 0.25])
-                elif pos[1] > opp_pos[1] + 0.5:
-                    s_w_weights = np.array([0, 0.75, 0.25])
-                else:
-                    s_w_weights = np.array([0.25, 0.25, 0.5])
-                s_w_choice = np.random.choice(['s', 'w', ''], p=(s_w_weights / np.sum(s_w_weights)))
+                directions = ['', 's', 'w']
+                direction_weights = np.array([10, 5, 5])
+                if pos[1] < opp_pos[1] - 0.25:
+                    direction_weights[1] += 25
+                    direction_weights[2] -= 5
+                elif pos[1] > opp_pos[1] + 0.25:
+                    direction_weights[1] -= 5
+                    direction_weights[2] += 25
+                # Hammer, prefer s
+                if self_weapon_type and self_grounded == 2:
+                    direction_weights[1] += 25
+                # No s in middle section
+                if self.x_section == X_SECTION.MIDDLE and not self_grounded:
+                    direction_weights[1] = 0
+                direction_choice = np.random.choice(directions, p=(direction_weights / np.sum(direction_weights)))
                 
                 # Weights for holding j, k, l, space
                 attacks = ['', 'k', 'j', 'space', 'l',]
                 attack_weights = np.zeros(5)
-                attack_weights[0], attack_weights[2] = 5, 15
+                attack_weights[0], attack_weights[2] = 5, 25
                 if self_grounded:
                     if self_weapon_type == 0:
                         attack_weights[1] = 5
                 else:
                     attack_weights[1] = 10
-                if self_jumps_left == 0 and pos[1] >= opp_pos[1] - 0.5:
-                    if self_weapon_type > 0:
-                        attack_weights[3] = 20
-                    else:
-                        attack_weights[3] = 10
+                if self_jumps_left == 0 and pos[1] >= opp_pos[1] - 0.25:
+                    attack_weights[3] = 10
                 if self_dodge_timer == 0:
                     attack_weights[4] = 10
                 attack_choice = np.random.choice(attacks, p=(attack_weights / np.sum(attack_weights)))
 
-                if s_w_choice:
-                    action = self.act_helper.press_keys([s_w_choice], action)
+                if direction_choice:
+                    action = self.act_helper.press_keys([direction_choice], action)
                 if attack_choice:
                     action = self.act_helper.press_keys([attack_choice], action)
 
         # Pickup
         if np.any(
             np.logical_and(
-                np.pow(pos[0] - spawners[:, 0], 2) + np.pow(pos[1] - spawners[:, 1], 2) < 2,
+                np.pow(pos[0] - spawners[:, 0], 2) + np.pow(pos[1] - spawners[:, 1], 2) < 1.5,
                 spawners[:, 2] > 0
             )
-        ) and self.time % 2 == 0 and self_weapon_type in [0, 2]:
+        ) and self.time % 2 == 0 and self_weapon_type in [0, 1]:
             action = self.act_helper.press_keys(['h'], action)
 
         # Taunting
