@@ -45,10 +45,12 @@ class SubmittedAgent(Agent):
     '''
     Better BasedAgent
     '''
-    HORIZONTAL_THRESHOLD = 1.6
+    HORIZONTAL_THRESHOLD = 2.0
     VERTICAL_THRESHOLD = 2.0
     CHARACTER_HEIGHT = 0.4
     CHARACTER_WIDTH = 0.4
+    HEIGHT_DIFFERENCE_RANGE = 0.15
+    X_DIFFERENCE_RANGE = 0.8
 
     def __init__(
             self,
@@ -105,8 +107,9 @@ class SubmittedAgent(Agent):
 
         # Choose target (weapon if none, then opponent)
         target_pos = None
-        active_spawners = spawners[np.where(spawners[:,2] != 0)][:,0:2]
-        if self_weapon_type == 0:
+        active_spawners = spawners[np.where(np.logical_and(spawners[:, 2] != 0, spawners[:, 2] != 2))][:,0:2]
+        # Prefer hammers
+        if self_weapon_type == 0 or self_weapon_type == 1:
             if len(active_spawners) > 0:
                 spawner_distances = np.pow(pos[0] - active_spawners[:,0], 2) + np.pow(pos[1] - active_spawners[:,1], 2)
                 target_pos = active_spawners[np.argmin(spawner_distances)]
@@ -127,9 +130,9 @@ class SubmittedAgent(Agent):
             action = self.act_helper.press_keys(['a'])
         elif target_pos is not None:
             # Head towards target
-            if (target_pos[0] > pos[0]):
+            if (target_pos[0] > pos[0] + self.X_DIFFERENCE_RANGE):
                 action = self.act_helper.press_keys(['d'])
-            else:
+            elif (target_pos[0] < pos[0] - self.X_DIFFERENCE_RANGE):
                 action = self.act_helper.press_keys(['a'])
 
         # Vertical Movement
@@ -141,70 +144,91 @@ class SubmittedAgent(Agent):
                 action = self.act_helper.press_keys(['space'], action)
             if vel[1] > prev_vel_y and self_recoveries_left == 1 and self.time % 2 == 1:
                 action = self.act_helper.press_keys(['k'], action)
-        elif target_pos is not None and pos[1] > target_pos[1] + 0.1 and self_jumps_left == 0 and self.time % 2 == 0:
+        elif target_pos is not None and pos[1] > target_pos[1] + self.HEIGHT_DIFFERENCE_RANGE and self_jumps_left == 0 and self.time % 2 == 0:
             # Jump towards target
             action = self.act_helper.press_keys(['space'], action)
 
-        # Attack if near and not recovering
+        # Attack if near and not recovering or below platform
         if (
             self.x_section == X_SECTION.LEFT_PLATFORM or
             self.x_section == X_SECTION.RIGHT_PLATFORM or
             (
                 self.x_section == X_SECTION.MIDDLE and 
-                pos[1] < platform_pos[1] - self.CHARACTER_HEIGHT
+                pos[1] < platform_pos[1] - self.CHARACTER_HEIGHT - self.VERTICAL_THRESHOLD
+            ) or (
+                self.x_section == X_SECTION.MIDDLE and 
+                pos[1] < platform_pos[1] - self.CHARACTER_HEIGHT and
+                self_grounded
             )
         ):
             # Engagement range based on weapon
             if self_weapon_type == 0:
-                if pos[1] < opp_pos[1] - 0.25:
+                if pos[1] < opp_pos[1] - self.HEIGHT_DIFFERENCE_RANGE:
                     squared_engagement_range = 9
                 else:
                     squared_engagement_range = 4
-            else:
-                if pos[1] < opp_pos[1] - 0.25:
+            elif self_weapon_type == 1:
+                if pos[1] < opp_pos[1] - self.HEIGHT_DIFFERENCE_RANGE:
                     if vel[1] < 0:
-                        squared_engagement_range = 0
+                        squared_engagement_range = 4
                     else:
-                        squared_engagement_range = 6.25
+                        squared_engagement_range = 9
                 else:
-                    squared_engagement_range = 9
+                    squared_engagement_range = 6.25
+            else:
+                if pos[1] < opp_pos[1] - self.HEIGHT_DIFFERENCE_RANGE:
+                    if vel[1] < 0:
+                        squared_engagement_range = 4
+                    else:
+                        squared_engagement_range = 12.25
+                else:
+                    squared_engagement_range = 6.25
 
             if (pos[0] - opp_pos[0])**2 + (pos[1] - opp_pos[1])**2 < squared_engagement_range:
-                # Weights for holding s or w
+                # Weights for holding s,w,a,d
                 directions = ['', 's', 'w']
                 direction_weights = np.array([10, 5, 5])
-                if pos[1] < opp_pos[1] - 0.25:
+                if pos[1] < opp_pos[1] - self.HEIGHT_DIFFERENCE_RANGE:
                     direction_weights[1] += 25
                     direction_weights[2] -= 5
-                elif pos[1] > opp_pos[1] + 0.25:
+                elif pos[1] > opp_pos[1] + self.HEIGHT_DIFFERENCE_RANGE:
                     direction_weights[1] -= 5
                     direction_weights[2] += 25
                 # Hammer, prefer s
-                if self_weapon_type and self_grounded == 2:
-                    direction_weights[1] += 25
+                if self_weapon_type == 2 and self_grounded:
+                    direction_weights[1] += 35
                 # No s in middle section
                 if self.x_section == X_SECTION.MIDDLE and not self_grounded:
                     direction_weights[1] = 0
                 direction_choice = np.random.choice(directions, p=(direction_weights / np.sum(direction_weights)))
                 
+                x_directions = ['', 's', 'w']
+                x_direction_weights = np.array([40, 5, 5])
+                x_direction_choice = np.random.choice(x_directions, p=(x_direction_weights / np.sum(x_direction_weights)))
+
                 # Weights for holding j, k, l, space
                 attacks = ['', 'k', 'j', 'space', 'l',]
                 attack_weights = np.zeros(5)
-                attack_weights[0], attack_weights[2] = 10, 20
+                attack_weights[0], attack_weights[2] = 5, 30
                 if self_grounded:
                     if self_weapon_type == 0:
-                        attack_weights[1] = 5
+                        attack_weights[1] = 0
                 else:
                     if self_weapon_type == 2:
                         attack_weights[1] = 10
-                if self_jumps_left == 0 and pos[1] >= opp_pos[1] - 0.25:
-                    attack_weights[3] = 20
+                if self_jumps_left == 0 and pos[1] >= opp_pos[1] - self.HEIGHT_DIFFERENCE_RANGE:
+                    if self_weapon_type == 2:
+                        attack_weights[3] = 5
+                    else:
+                        attack_weights[3] = 10
                 if self_dodge_timer == 0:
                     attack_weights[4] = 10
                 attack_choice = np.random.choice(attacks, p=(attack_weights / np.sum(attack_weights)))
 
                 if direction_choice:
                     action = self.act_helper.press_keys([direction_choice], action)
+                if x_direction_choice:
+                    action = self.act_helper.press_keys([x_direction_choice], action)
                 if attack_choice:
                     action = self.act_helper.press_keys([attack_choice], action)
 
@@ -213,7 +237,7 @@ class SubmittedAgent(Agent):
         if np.any(
             np.logical_and(
                 np.pow(pos[0] - spawners[:, 0], 2) + np.pow(pos[1] - spawners[:, 1], 2) < 1.5,
-                spawners[:, 2] > 0
+                np.logical_and(spawners[:, 2] != 0, spawners[:, 2] != 2)
             )
         # Prefer hammers
         ) and self.time % 2 == 0 and self_weapon_type in [0, 1]:
@@ -225,6 +249,7 @@ class SubmittedAgent(Agent):
             not self.taunted_once and 
             self.time % 2 == 0 and
             self_grounded and
+            self_state not in [9, 10] and
             (
                 self.x_section in [X_SECTION.LEFT_PLATFORM, X_SECTION.RIGHT_PLATFORM] or
                 (self.x_section == X_SECTION.MIDDLE and pos[1] < platform_pos[1] - self.CHARACTER_HEIGHT)
