@@ -25,53 +25,184 @@ from sb3_contrib import RecurrentPPO # Importing an LSTM
 # import ttnn
 # from user.my_agent_tt import TTMLPPolicy
 
+from enum import Enum
+import numpy as np
+
+class X_SECTION(Enum):
+    LEFT_EDGE = "left_edge"
+    LEFT_PLATFORM = "left_platform"
+    RIGHT_EDGE = "right_edge"
+    RIGHT_PLATFORM = "right_platform"
+    MIDDLE = "middle"
+
+
+class Y_SECTION(Enum):
+    BOTTOM = "bottom" # (> 0.85)
+    MIDDLE = "middle"
+    TOP = "top" # (<= 2.85)
 
 class SubmittedAgent(Agent):
     '''
-    Input the **file_path** to your agent here for submission!
+    Better BasedAgent
     '''
+    HORIZONTAL_THRESHOLD = 1.6
+    VERTICAL_THRESHOLD = 2.0
+    CHARACTER_HEIGHT = 0.4
+    CHARACTER_WIDTH = 0.4
+
     def __init__(
-        self,
-        file_path: Optional[str] = None,
+            self,
+            *args,
+            **kwargs
     ):
-        super().__init__(file_path)
+        super().__init__(*args, **kwargs)
+        self.time = 0
+        self.x_section: X_SECTION = X_SECTION.LEFT_PLATFORM
+        self.y_section: Y_SECTION = Y_SECTION.MIDDLE
+        self.taunted_once: bool = False
 
-        # To run a TTNN model, you must maintain a pointer to the device and can be done by 
-        # uncommmenting the line below to use the device pointer
-        # self.mesh_device = ttnn.open_mesh_device(ttnn.MeshShape(1,1))
-
-    def _initialize(self) -> None:
-        if self.file_path is None:
-            self.model = PPO("MlpPolicy", self.env, verbose=0)
-            del self.env
+    def get_section(self, pos: tuple[float, float]):
+        if pos[0] < -7.0 - self.CHARACTER_WIDTH + self.HORIZONTAL_THRESHOLD:
+            x_section = X_SECTION.LEFT_EDGE
+        elif pos[0] < -2.0 + self.CHARACTER_WIDTH - self.HORIZONTAL_THRESHOLD:
+            x_section = X_SECTION.LEFT_PLATFORM
+        elif pos[0] < 2.0 - self.CHARACTER_WIDTH + self.HORIZONTAL_THRESHOLD:
+            x_section = X_SECTION.MIDDLE
+        elif pos[0] < 7.0 + self.CHARACTER_WIDTH - self.HORIZONTAL_THRESHOLD:
+            x_section = X_SECTION.RIGHT_PLATFORM
         else:
-            self.model = PPO.load(self.file_path)
+            x_section = X_SECTION.RIGHT_EDGE
 
-        # To run the sample TTNN model during inference, you can uncomment the 5 lines below:
-        # This assumes that your self.model.policy has the MLPPolicy architecture defined in `train_agent.py` or `my_agent_tt.py`
-        # mlp_state_dict = self.model.policy.features_extractor.model.state_dict()
-        # self.tt_model = TTMLPPolicy(mlp_state_dict, self.mesh_device)
-        # self.model.policy.features_extractor.model = self.tt_model
-        # self.model.policy.vf_features_extractor.model = self.tt_model
-        # self.model.policy.pi_features_extractor.model = self.tt_model
+        if pos[1] < 0.85 - self.CHARACTER_HEIGHT:
+            y_section = Y_SECTION.TOP
+        elif pos[1] < 2.85 - self.CHARACTER_HEIGHT + self.VERTICAL_THRESHOLD:
+            y_section = Y_SECTION.MIDDLE
+        else:
+            y_section = Y_SECTION.BOTTOM
 
-    def _gdown(self) -> str:
-        data_path = "rl-model.zip"
-        if not os.path.isfile(data_path):
-            print(f"Downloading {data_path}...")
-            # Place a link to your PUBLIC model data here. This is where we will download it from on the tournament server.
-            url = "https://drive.google.com/file/d/1JIokiBOrOClh8piclbMlpEEs6mj3H1HJ/view?usp=sharing"
-            gdown.download(url, output=data_path, fuzzy=True)
-        return data_path
+        return x_section, y_section
+
 
     def predict(self, obs):
-        action, _ = self.model.predict(obs)
+        self.time += 1
+        pos = self.obs_helper.get_section(obs, 'player_pos')
+        vel = self.obs_helper.get_section(obs, 'player_vel')
+        self_state = self.obs_helper.get_section(obs, 'player_state')
+        opp_pos = self.obs_helper.get_section(obs, 'opponent_pos')
+        opp_KO = self.obs_helper.get_section(obs, 'opponent_state') in [11]
+        action = self.act_helper.zeros()
+        prev_vel_y = 0
+        self_jumps_left = self.obs_helper.get_section(obs, 'player_jumps_left')
+        self_recoveries_left = self.obs_helper.get_section(obs, 'player_recoveries_left')
+        platform_pos = self.obs_helper.get_section(obs, 'player_moving_platform_pos')
+        spawners = np.array([self.obs_helper.get_section(obs, f'player_spawner_{i+1}') for i in range(4)])
+        self_weapon_type = self.obs_helper.get_section(obs, 'player_weapon_type')
+        self_dodge_timer = self.obs_helper.get_section(obs, 'player_dodge_timer')
+        self_grounded = self.obs_helper.get_section(obs, 'player_grounded')
+
+        self.x_section, self.y_section = self.get_section(pos)
+        opp_x_section, opp_y_section = self.get_section(opp_pos)
+
+        # Horizontal Movement
+        if self.x_section == X_SECTION.LEFT_EDGE:
+            action = self.act_helper.press_keys(['d'])
+        elif self.x_section == X_SECTION.RIGHT_EDGE:
+            action = self.act_helper.press_keys(['a'])
+        elif (
+            self.x_section == X_SECTION.MIDDLE and 
+            pos[1] > platform_pos[1] + self.CHARACTER_HEIGHT
+        ):
+            action = self.act_helper.press_keys(['a'])
+        elif not opp_KO:
+            # Head towards opponent
+            if (opp_pos[0] > pos[0]):
+                action = self.act_helper.press_keys(['d'])
+            else:
+                action = self.act_helper.press_keys(['a'])
+
+        # Vertical Movement
+        if (
+            self.y_section == Y_SECTION.BOTTOM or
+            (self.x_section == X_SECTION.RIGHT_EDGE and self.y_section == Y_SECTION.MIDDLE)
+        ):
+            if self.time % 2 == 0:
+                action = self.act_helper.press_keys(['space'], action)
+            if vel[1] > prev_vel_y and self_recoveries_left == 1 and self.time % 2 == 1:
+                action = self.act_helper.press_keys(['k'], action)
+        elif pos[1] > opp_pos[1] + 0.1 and self_jumps_left == 0 and not opp_KO and self.time % 2 == 0:
+            # Jump towards opponent
+            action = self.act_helper.press_keys(['space'], action)
+
+        # Attack if near and not recovering
+        if (
+            self.x_section == X_SECTION.LEFT_PLATFORM or
+            self.x_section == X_SECTION.RIGHT_PLATFORM or
+            (
+                self.x_section == X_SECTION.MIDDLE and 
+                pos[1] < platform_pos[1] - self.CHARACTER_HEIGHT
+            )
+        ):
+            # Engagement range
+            if self_weapon_type == 0:
+                squared_engagement_range = np.random.random() * 2.5 + 5
+            else:
+                squared_engagement_range = np.random.random() * 4 + 9
+
+            if (pos[0] - opp_pos[0])**2 + (pos[1] - opp_pos[1])**2 < squared_engagement_range:
+                # Weights for holding s or w
+                if pos[1] < opp_pos[1] - 0.5:
+                    s_w_weights = np.array([0.75, 0, 0.25])
+                elif pos[1] > opp_pos[1] + 0.5:
+                    s_w_weights = np.array([0, 0.75, 0.25])
+                else:
+                    s_w_weights = np.array([0.25, 0.25, 0.5])
+                s_w_choice = np.random.choice(['s', 'w', ''], p=(s_w_weights / np.sum(s_w_weights)))
+                
+                # Weights for holding j, k, l, space
+                attacks = ['', 'k', 'j', 'space', 'l',]
+                attack_weights = np.zeros(5)
+                attack_weights[0], attack_weights[2] = 5, 15
+                if self_grounded:
+                    if self_weapon_type == 0:
+                        attack_weights[1] = 5
+                else:
+                    attack_weights[1] = 10
+                if self_jumps_left == 0 and pos[1] >= opp_pos[1] - 0.5:
+                    if self_weapon_type > 0:
+                        attack_weights[3] = 20
+                    else:
+                        attack_weights[3] = 10
+                if self_dodge_timer == 0:
+                    attack_weights[4] = 10
+                attack_choice = np.random.choice(attacks, p=(attack_weights / np.sum(attack_weights)))
+
+                if s_w_choice:
+                    action = self.act_helper.press_keys([s_w_choice], action)
+                if attack_choice:
+                    action = self.act_helper.press_keys([attack_choice], action)
+
+        # Pickup
+        if np.any(
+            np.logical_and(
+                np.pow(pos[0] - spawners[:, 0], 2) + np.pow(pos[1] - spawners[:, 1], 2) < 2,
+                spawners[:, 2] > 0
+            )
+        ) and self.time % 2 == 0 and self_weapon_type == 0:
+            action = self.act_helper.press_keys(['h'], action)
+
+        # Taunting
+        if (
+            opp_KO and
+            not self.taunted_once and 
+            self.time % 2 == 0 and
+            self_grounded and
+            self.x_section in [X_SECTION.LEFT_PLATFORM, X_SECTION.RIGHT_PLATFORM]
+        ):
+            action = self.act_helper.press_keys(['g'], action)
+        elif (self_state == 12):
+            self.taunted_once = True
+        if (not opp_KO):
+            self.taunted_once = False
+
+        prev_vel_y = vel[1]
         return action
-
-    def save(self, file_path: str) -> None:
-        self.model.save(file_path)
-
-    # If modifying the number of models (or training in general), modify this
-    def learn(self, env, total_timesteps, log_interval: int = 4):
-        self.model.set_env(env)
-        self.model.learn(total_timesteps=total_timesteps, log_interval=log_interval)
