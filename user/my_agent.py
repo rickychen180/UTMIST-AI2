@@ -202,8 +202,12 @@ class SubmittedAgent(Agent):
                     direction_weights[1] = 0
                 direction_choice = np.random.choice(directions, p=(direction_weights / np.sum(direction_weights)))
                 
-                x_directions = ['', 's', 'w']
-                x_direction_weights = np.array([40, 5, 5])
+                x_directions = ['', 'a', 'd']
+                x_direction_weights = np.array([20, 0, 0])
+                if pos[0] < opp_pos[0]:
+                    x_direction_weights[2] += 10
+                else:
+                    x_direction_weights[1] += 10
                 x_direction_choice = np.random.choice(x_directions, p=(x_direction_weights / np.sum(x_direction_weights)))
 
                 # Weights for holding j, k, l, space
