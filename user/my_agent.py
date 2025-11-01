@@ -187,7 +187,7 @@ class SubmittedAgent(Agent):
                 np.pow(pos[0] - spawners[:, 0], 2) + np.pow(pos[1] - spawners[:, 1], 2) < 2,
                 spawners[:, 2] > 0
             )
-        ) and self.time % 2 == 0 and self_weapon_type == 0:
+        ) and self.time % 2 == 0 and self_weapon_type in [0, 2]:
             action = self.act_helper.press_keys(['h'], action)
 
         # Taunting
@@ -196,7 +196,10 @@ class SubmittedAgent(Agent):
             not self.taunted_once and 
             self.time % 2 == 0 and
             self_grounded and
-            self.x_section in [X_SECTION.LEFT_PLATFORM, X_SECTION.RIGHT_PLATFORM]
+            (
+                self.x_section in [X_SECTION.LEFT_PLATFORM, X_SECTION.RIGHT_PLATFORM] or
+                (self.x_section == X_SECTION.MIDDLE and pos[1] < platform_pos[1] - self.CHARACTER_HEIGHT)
+            )
         ):
             action = self.act_helper.press_keys(['g'], action)
         elif (self_state == 12):
