@@ -188,7 +188,7 @@ class BasedAgent2(Agent):
     '''
     Better BasedAgent
     '''
-    HORIZONTAL_THRESHOLD = 1.2
+    HORIZONTAL_THRESHOLD = 1.6
     VERTICAL_THRESHOLD = 2.0
     CHARACTER_HEIGHT = 0.4
     CHARACTER_WIDTH = 0.4
@@ -238,8 +238,13 @@ class BasedAgent2(Agent):
         self_jumps_left = self.obs_helper.get_section(obs, 'player_jumps_left')
         self_recoveries_left = self.obs_helper.get_section(obs, 'player_recoveries_left')
         platform_pos = self.obs_helper.get_section(obs, 'player_moving_platform_pos')
+        spawners = np.array([self.obs_helper.get_section(obs, f'player_spawner_{i+1}') for i in range(4)])
+        self_weapon_type = self.obs_helper.get_section(obs, 'player_weapon_type')
+        self_dodge_timer = self.obs_helper.get_section(obs, 'player_dodge_timer')
+        self_grounded = self.obs_helper.get_section(obs, 'player_grounded')
 
         self.x_section, self.y_section = self.get_section(pos)
+        opp_x_section, opp_y_section = self.get_section(opp_pos)
 
         # Horizontal Movement
         if self.x_section == X_SECTION.LEFT_EDGE:
@@ -267,11 +272,11 @@ class BasedAgent2(Agent):
                 action = self.act_helper.press_keys(['space'], action)
             if vel[1] > prev_vel_y and self_recoveries_left == 1 and self.time % 2 == 1:
                 action = self.act_helper.press_keys(['k'], action)
-        # Jump towards opponent
         elif pos[1] > opp_pos[1] + 0.1 and self_jumps_left == 0 and not opp_KO and self.time % 2 == 0:
+            # Jump towards opponent
             action = self.act_helper.press_keys(['space'], action)
 
-        # Attack if near
+        # Attack if near and not recovering
         if (
             self.x_section == X_SECTION.LEFT_PLATFORM or
             self.x_section == X_SECTION.RIGHT_PLATFORM or
@@ -280,24 +285,60 @@ class BasedAgent2(Agent):
                 pos[1] < platform_pos[1] - self.CHARACTER_HEIGHT
             )
         ):
-            squared_engagement_range = np.random.random() * 2.5 + 5
+            # Engagement range
+            if self_weapon_type == 0:
+                squared_engagement_range = np.random.random() * 2.5 + 5
+            else:
+                squared_engagement_range = np.random.random() * 4 + 9
+
             if (pos[0] - opp_pos[0])**2 + (pos[1] - opp_pos[1])**2 < squared_engagement_range:
-                if pos[1] < opp_pos[1] - 1.0 and np.random.random() < 0.5:
-                    action = self.act_helper.press_keys(['s'], action)
-                elif pos[1] > opp_pos[1] + 1.0 and np.random.random() < 0.75:
-                    action = self.act_helper.press_keys(['w'], action)
-                if self_jumps_left == 0:
-                    attack_option = np.random.choice(['j', 'k', 'l', 'space'], p=[0.4, 0.2, 0.2, 0.2])
+                # Weights for holding s or w
+                if pos[1] < opp_pos[1] - 0.5:
+                    s_w_weights = np.array([0.75, 0, 0.25])
+                elif pos[1] > opp_pos[1] + 0.5:
+                    s_w_weights = np.array([0, 0.75, 0.25])
                 else:
-                    attack_option = np.random.choice(['j', 'k', 'l'], p=[0.5, 0.25, 0.25])
-                action = self.act_helper.press_keys([attack_option], action)
+                    s_w_weights = np.array([0.25, 0.25, 0.5])
+                s_w_choice = np.random.choice(['s', 'w', ''], p=(s_w_weights / np.sum(s_w_weights)))
+                
+                # Weights for holding j, k, l, space
+                attacks = ['', 'k', 'j', 'space', 'l',]
+                attack_weights = np.zeros(5)
+                attack_weights[0], attack_weights[2] = 5, 15
+                if self_grounded:
+                    if self_weapon_type == 0:
+                        attack_weights[1] = 5
+                else:
+                    attack_weights[1] = 10
+                if self_jumps_left == 0 and pos[1] >= opp_pos[1] - 0.5:
+                    if self_weapon_type > 0:
+                        attack_weights[3] = 20
+                    else:
+                        attack_weights[3] = 10
+                if self_dodge_timer == 0:
+                    attack_weights[4] = 10
+                attack_choice = np.random.choice(attacks, p=(attack_weights / np.sum(attack_weights)))
+
+                if s_w_choice:
+                    action = self.act_helper.press_keys([s_w_choice], action)
+                if attack_choice:
+                    action = self.act_helper.press_keys([attack_choice], action)
+
+        # Pickup
+        if np.any(
+            np.logical_and(
+                np.pow(pos[0] - spawners[:, 0], 2) + np.pow(pos[1] - spawners[:, 1], 2) < 2,
+                spawners[:, 2] > 0
+            )
+        ) and self.time % 2 == 0 and self_weapon_type == 0:
+            action = self.act_helper.press_keys(['h'], action)
 
         # Taunting
         if (
             opp_KO and
             not self.taunted_once and 
             self.time % 2 == 0 and
-            self_state in [0, 1, 2] and
+            self_grounded and
             self.x_section in [X_SECTION.LEFT_PLATFORM, X_SECTION.RIGHT_PLATFORM]
         ):
             action = self.act_helper.press_keys(['g'], action)
