@@ -103,6 +103,18 @@ class SubmittedAgent(Agent):
         self.x_section, self.y_section = self.get_section(pos)
         opp_x_section, opp_y_section = self.get_section(opp_pos)
 
+        # Choose target (weapon if none, then opponent)
+        target_pos = None
+        active_spawners = spawners[np.where(spawners[:,2] != 0)][:,0:2]
+        if self_weapon_type == 0:
+            if len(active_spawners) > 0:
+                spawner_distances = np.pow(pos[0] - active_spawners[:,0], 2) + np.pow(pos[1] - active_spawners[:,1], 2)
+                target_pos = active_spawners[np.argmin(spawner_distances)]
+            else:
+                target_pos = opp_pos
+        elif not opp_KO:
+            target_pos = opp_pos
+
         # Horizontal Movement
         if self.x_section == X_SECTION.LEFT_EDGE:
             action = self.act_helper.press_keys(['d'])
@@ -113,9 +125,9 @@ class SubmittedAgent(Agent):
             pos[1] > platform_pos[1] + self.CHARACTER_HEIGHT
         ):
             action = self.act_helper.press_keys(['a'])
-        elif not opp_KO:
-            # Head towards opponent
-            if (opp_pos[0] > pos[0]):
+        elif target_pos is not None:
+            # Head towards target
+            if (target_pos[0] > pos[0]):
                 action = self.act_helper.press_keys(['d'])
             else:
                 action = self.act_helper.press_keys(['a'])
@@ -129,8 +141,8 @@ class SubmittedAgent(Agent):
                 action = self.act_helper.press_keys(['space'], action)
             if vel[1] > prev_vel_y and self_recoveries_left == 1 and self.time % 2 == 1:
                 action = self.act_helper.press_keys(['k'], action)
-        elif pos[1] > opp_pos[1] + 0.1 and self_jumps_left == 0 and not opp_KO and self.time % 2 == 0:
-            # Jump towards opponent
+        elif target_pos is not None and pos[1] > target_pos[1] + 0.1 and self_jumps_left == 0 and self.time % 2 == 0:
+            # Jump towards target
             action = self.act_helper.press_keys(['space'], action)
 
         # Attack if near and not recovering
@@ -142,11 +154,20 @@ class SubmittedAgent(Agent):
                 pos[1] < platform_pos[1] - self.CHARACTER_HEIGHT
             )
         ):
-            # Engagement range
+            # Engagement range based on weapon
             if self_weapon_type == 0:
-                squared_engagement_range = 6.25
+                if pos[1] < opp_pos[1] - 0.25:
+                    squared_engagement_range = 9
+                else:
+                    squared_engagement_range = 4
             else:
-                squared_engagement_range = 9
+                if pos[1] < opp_pos[1] - 0.25:
+                    if vel[1] < 0:
+                        squared_engagement_range = 0
+                    else:
+                        squared_engagement_range = 6.25
+                else:
+                    squared_engagement_range = 9
 
             if (pos[0] - opp_pos[0])**2 + (pos[1] - opp_pos[1])**2 < squared_engagement_range:
                 # Weights for holding s or w
@@ -169,14 +190,15 @@ class SubmittedAgent(Agent):
                 # Weights for holding j, k, l, space
                 attacks = ['', 'k', 'j', 'space', 'l',]
                 attack_weights = np.zeros(5)
-                attack_weights[0], attack_weights[2] = 5, 25
+                attack_weights[0], attack_weights[2] = 10, 20
                 if self_grounded:
                     if self_weapon_type == 0:
                         attack_weights[1] = 5
                 else:
-                    attack_weights[1] = 10
+                    if self_weapon_type == 2:
+                        attack_weights[1] = 10
                 if self_jumps_left == 0 and pos[1] >= opp_pos[1] - 0.25:
-                    attack_weights[3] = 10
+                    attack_weights[3] = 20
                 if self_dodge_timer == 0:
                     attack_weights[4] = 10
                 attack_choice = np.random.choice(attacks, p=(attack_weights / np.sum(attack_weights)))
@@ -187,17 +209,19 @@ class SubmittedAgent(Agent):
                     action = self.act_helper.press_keys([attack_choice], action)
 
         # Pickup
+        # Check for nearby spawner
         if np.any(
             np.logical_and(
                 np.pow(pos[0] - spawners[:, 0], 2) + np.pow(pos[1] - spawners[:, 1], 2) < 1.5,
                 spawners[:, 2] > 0
             )
+        # Prefer hammers
         ) and self.time % 2 == 0 and self_weapon_type in [0, 1]:
             action = self.act_helper.press_keys(['h'], action)
 
         # Taunting
         if (
-            opp_KO and
+            target_pos is None and
             not self.taunted_once and 
             self.time % 2 == 0 and
             self_grounded and
